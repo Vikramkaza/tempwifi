@@ -1,10 +1,22 @@
 #include "EEPROM.h"
 #include "HTML.h"
 #include <WebServer.h>
-
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
+#define ONE_WIRE_BUS 22        //DS18B20 data wire is connected to pin 15 on the NodeMCU
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
 WebServer server(80);
 
 #include "WiFiManager.h"
+
+
+  unsigned long int timer;
+  long previousMillis = 0;
+  int interval = 10000; 
+  
 
 void setup() {
   pinMode(2, OUTPUT);
@@ -16,9 +28,38 @@ void setup() {
     digitalWrite(2,HIGH);
     while(loadWIFICredsForm());
   }
+  else{
+    String s = EEPROM.readString(100);
+    String p = EEPROM.readString(200);
+    String d = EEPROM.readString(400); 
+    const char * ssid = s.c_str();
+    const char * password = p.c_str();
+    Serial.println(s+p);
+    WiFi.begin(ssid, password);
+   
+    while (WiFi.status() != WL_CONNECTED) {
+      delay(1000);
+      Serial.println("Connecting to WiFi..");
+    }
+    
+    Serial.println("Connected to the WiFi network");
+     Systemtemp();
+   
+  }
+      
+  
+  
+  
+}
+void wipeEEPROM(){
+  for(int i=0;i<600;i++){
+    EEPROM.writeByte(i,0);
+  }
+  EEPROM.commit();
 }
 
 void loop() {
+  
   if(digitalRead(15) == HIGH){
     Serial.println("Wiping WiFi credentials from memory...");
     wipeEEPROM();
@@ -28,11 +69,59 @@ void loop() {
   delay(1000);
   digitalWrite(2,LOW);
   delay(1000);
+  
+}
+void Systemtemp(){
+  if(WiFi.status() == WL_CONNECTED){
+    
+  
+  if (millis() - previousMillis > interval) 
+    {
+    sensors.requestTemperatures();
+    }
+
+    Serial.println("Requesting temperatures: ");
+    Serial.println("Celcius Temperature="+String(sensors.getTempCByIndex(0))+"degC - Fahrenheit Temperature="+String(sensors.getTempFByIndex(0))+"F");
+    
+
+    float x = sensors.getTempCByIndex(0);
+    String str2;
+    str2 = String(x);
+  
+    
+    if ((WiFi.status() == WL_CONNECTED)) { //Check the current connection status
+      
+      HTTPClient http;
+      String str1= "https://script.google.com/macros/s/AKfycbyoQ4GrGCchp29uAoF0ctIh9h08vyzMvmqFPPltRCqG33cprYQL6dTC7eaj1Z45rfeu/exec?temp=";
+      
+      String str3=str1+str2;
+      http.begin(str3); //Specify the URL
+      int httpCode = http.GET();                                        //Make the request
+    
+      if (httpCode > 0) { //Check for the returning code
+    
+          String payload = http.getString();
+          Serial.println(httpCode);
+          Serial.println(payload);
+        }
+    
+      else {
+        Serial.println("Error on HTTP request");
+      }
+    
+      http.end();
+      previousMillis = millis();
+      delay(10000);
+   
+      Systemtemp();
+      
+}
+}
+else if(!CheckWIFICreds()){
+    Serial.println("No WIFI credentials stored in memory. Loading form...");
+    digitalWrite(2,HIGH);
+    while(loadWIFICredsForm());
+  
+}
 }
 
-void wipeEEPROM(){
-  for(int i=0;i<600;i++){
-    EEPROM.writeByte(i,0);
-  }
-  EEPROM.commit();
-}
